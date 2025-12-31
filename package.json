@@ -1,0 +1,22 @@
+{
+  "name": "telegram_new",
+  "version": "1.0.0",
+  "description": "Telegram File Sharing bot ",
+  "license": "ISC",
+  "author": "Aman",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "crypto": "^1.0.1",
+    "dotenv": "^17.2.3",
+    "ejs": "^3.1.10",
+    "express": "^5.2.1",
+    "mongodb": "^7.0.0",
+    "mongoose": "^9.1.1",
+    "node-telegram-bot-api": "^0.67.0"
+  }
+}

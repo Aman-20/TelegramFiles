@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title><%= botName %> — Telegram Bot</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      background: #f7f9fc;
+      margin: 0;
+      padding: 0;
+      color: #333;
+    }
+    .container {
+      max-width: 800px;
+      margin: 50px auto;
+      background: #fff;
+      padding: 30px;
+      border-radius: 16px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+    }
+    h1 { text-align: center; color: #006eff; margin-bottom: 10px; }
+    p { line-height: 1.6; }
+    .commands {
+      background: #f1f5ff;
+      padding: 15px;
+      border-radius: 10px;
+      margin: 20px 0;
+      font-family: monospace;
+      white-space: pre-line;
+    }
+    a.button {
+      display: inline-block;
+      padding: 12px 20px;
+      background: #006eff;
+      color: #fff;
+      text-decoration: none;
+      border-radius: 8px;
+      margin-top: 15px;
+      text-align: center;
+    }
+    a.button:hover { background: #0051c7; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🤖 <%= botName %></h1>
+    <p><%= description %></p>
+
+    <div class="commands">
+      <strong>User Commands:</strong>
+      /start — Start the bot  
+      /help — How to use  
+      /myaccount — Check your daily usage  
+      /recent — View latest uploads  
+      /trending — View trending files  
+      /favorites — Your saved files
+
+      <strong>Admin Commands:</strong>
+      /delete <FileID>  
+      /update <FileID> <kw1,kw2,...>  
+      /stats — Bot stats  
+      /broadcast <message>
+    </div>
+
+    <a href="https://t.me/File_sharing_hd_bot" target="_blank" class="button">
+      🚀 Open Bot in Telegram
+    </a>
+    <a href="https://t.me/dnafork_support" target="_blank" class="button support">
+        📢 Support Channel
+    </a>
+  </div>
+</body>
+</html>
