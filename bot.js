@@ -49,8 +49,8 @@ app.set('view engine', 'ejs');
 //website landing page
 app.get('/', (req, res) => {
   res.render('index', {
-    botName: 'File Sharing Bot',
-    botUsername: 'File_sharing_hd_bot',
+    botName: 'Movie Ark Bot',
+    botUsername: 'Movie_ark_bot',
     supportChannel: 'dnafork_support',
     description: 'This Telegram bot lets you search, download, and manage Movies with daily limits, favorites, trending content, and more.'
   });
