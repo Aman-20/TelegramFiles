@@ -151,9 +151,7 @@ const Pending = mongoose.model('Pending', PendingSchema);
 // MongoDB Indexes
 FileSchema.index({ downloads: -1 });
 FileSchema.index({ uploaded_at: -1 });
-
 FavoriteSchema.index({ userId: 1 });
-
 PendingSchema.index({ created_at: 1 }, { expireAfterSeconds: 600 });
 
 
@@ -219,13 +217,6 @@ async function setUserSearchResults(userId, results, ttlSeconds = 300) {
     ttlSeconds
   );
 }
-
-async function getUserSearchResults(userId) {
-  const raw = await redis.get(`search:${userId}`);
-  return raw ? JSON.parse(raw) : null;
-}
-
-
 
 //Telegram bot
 console.log('Bot started');
@@ -568,7 +559,6 @@ bot.on('message', async (msg) => {
   }
 });
 
-
 async function isCooling(userId, seconds = 3) {
   const key = `cooldown:${userId}`;
   const exists = await redis.get(key);
@@ -577,13 +567,48 @@ async function isCooling(userId, seconds = 3) {
   return false;
 }
 
-
 //Callback query handling
 bot.on('callback_query', async (q) => {
   try {
     const data = String(q.data || '');
     const chatId = q.message.chat.id;
     const fromId = String(q.from.id);
+
+    // Broadcast handle first 
+    if (data.startsWith('BC_SEND:') || data.startsWith('BC_CANCEL:')) {
+      const parts = data.split(':');
+      const key = parts[1];
+      const obj = await getBroadcast(key);
+      if (!obj) {
+        await bot.answerCallbackQuery(q.id, { text: 'Expired.' });
+        return;
+      }
+      if (data.startsWith('BC_CANCEL:')) {
+        await deleteBroadcast(key);
+        await bot.editMessageText('Broadcast cancelled.', { chat_id: q.message.chat.id, message_id: q.message.message_id }).catch(() => { });
+        await bot.answerCallbackQuery(q.id, { text: 'Cancelled.' });
+        return;
+      }
+      // send broadcast
+      const text = obj.text;
+
+      const users = await Limit.distinct('userId').exec();
+
+      const DELAY_MS = 35; // safe for Telegram
+      for (const u of users) {
+        try {
+          await bot.sendMessage(u, `📣 Broadcast:\n\n${text}`);
+          await new Promise(res => setTimeout(res, DELAY_MS));
+        } catch (e) {
+          console.warn('send to', u, 'failed');
+        }
+      }
+
+      await deleteBroadcast(key);
+      await bot.editMessageText('Broadcast sent.', { chat_id: q.message.chat.id, message_id: q.message.message_id }).catch(() => { });
+      await bot.answerCallbackQuery(q.id, { text: 'Broadcast sent.' });
+      return;
+    }
 
     // Pending confirm/cancel
     if (data.startsWith('PENDING_CONFIRM:') || data.startsWith('PENDING_CANCEL:')) {
@@ -849,40 +874,6 @@ bot.on('callback_query', async (q) => {
   }
 });
 
-
-//Inline query (global inline search)
-bot.on('inline_query', async (iq) => {
-  try {
-    const q = iq.query?.trim();
-    if (!q) return bot.answerInlineQuery(iq.id, []);
-
-    const results = await File.find({ $text: { $search: q } })
-      .sort({ score: { $meta: 'textScore' }, uploaded_at: -1 })
-      .limit(10)
-      .lean()
-      .exec();
-
-    const inline = results.map(f => ({
-      type: 'article',
-      id: f.customId,
-      title: f.file_name,
-      description: f.keywords.join(', ').slice(0, 100),
-      input_message_content: {
-        message_text: f.customId
-      }
-    }));
-
-
-    await bot.answerInlineQuery(iq.id, inline, {
-      cache_time: 30,
-      is_personal: true
-    });
-
-  } catch (err) {
-    console.error('inline_query error', err);
-  }
-});
-
 //Admin commands: /delete and /update and /broadcast
 bot.onText(/\/delete (.+)/, async (msg, match) => {
   const chatId = msg.chat.id;
@@ -937,51 +928,6 @@ async function deleteBroadcast(key) {
   await redis.del(`broadcast:${key}`);
 }
 
-
-bot.on('callback_query', async (q) => {
-  // existing handler above processes many items; we handle broadcast callbacks here early if present
-  try {
-    const data = String(q.data || '');
-    if (data.startsWith('BC_SEND:') || data.startsWith('BC_CANCEL:')) {
-      const parts = data.split(':');
-      const key = parts[1];
-      const obj = await getBroadcast(key);
-      if (!obj) {
-        await bot.answerCallbackQuery(q.id, { text: 'Expired.' });
-        return;
-      }
-      if (data.startsWith('BC_CANCEL:')) {
-        await deleteBroadcast(key);
-        await bot.editMessageText('Broadcast cancelled.', { chat_id: q.message.chat.id, message_id: q.message.message_id }).catch(() => { });
-        await bot.answerCallbackQuery(q.id, { text: 'Cancelled.' });
-        return;
-      }
-      // send broadcast
-      const text = obj.text;
-
-      const users = await Limit.distinct('userId').exec();
-
-      const DELAY_MS = 35; // safe for Telegram
-      for (const u of users) {
-        try {
-          await bot.sendMessage(u, `📣 Broadcast:\n\n${text}`);
-          await new Promise(res => setTimeout(res, DELAY_MS));
-        } catch (e) {
-          console.warn('send to', u, 'failed');
-        }
-      }
-
-      await deleteBroadcast(key);
-      await bot.editMessageText('Broadcast sent.', { chat_id: q.message.chat.id, message_id: q.message.message_id }).catch(() => { });
-      await bot.answerCallbackQuery(q.id, { text: 'Broadcast sent.' });
-      return;
-    }
-  } catch (e) {
-    console.error('broadcast callback error', e);
-  }
-});
-
-
 //Favorites listing
 bot.onText(/\/favorites/, async (msg) => {
   const chatId = msg.chat.id;
@@ -1005,7 +951,6 @@ bot.onText(/\/favorites/, async (msg) => {
   autoDeleteMessage(bot, chatId, recentList.message_id);
 
 });
-
 
 //Graceful shutdown
 process.on('SIGINT', async () => {
