@@ -92,8 +92,22 @@ const FileSchema = new Schema({
   downloads: { type: Number, default: 0 }, // how many times sent
   searches: { type: Number, default: 0 } // aggregate search hits
 });
-// FileSchema.index({ file_name: 'text', caption: 'text', keywords: 'text' });
+FileSchema.index({ file_name: 'text', caption: 'text', keywords: 'text' });
 const File = mongoose.model('File', FileSchema);
+
+//solve index problem 
+mongoose.connection.once('open', async () => {
+  try {
+    await File.collection.createIndex({
+      file_name: 'text',
+      caption: 'text',
+      keywords: 'text'
+    });
+    console.log('✅ Text index ensured');
+  } catch (err) {
+    console.error('❌ Index creation failed:', err.message);
+  }
+});
 
 // Sequence counter for customId
 const CounterSchema = new Schema({
