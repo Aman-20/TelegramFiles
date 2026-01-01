@@ -1,73 +1,97 @@
-📁 Telegram File Sharing Bot
+# 📁 Telegram File Sharing Bot
 
-A powerful Telegram bot built with Node.js, MongoDB, and Redis that allows users to search, download, and manage files with daily limits, favorites, trending content, and admin controls.
+A powerful Telegram bot built with **Node.js**, **MongoDB**, and **Redis** that allows users to search, download, and manage files with daily limits, favorites, trending content, and admin controls.
 
-This bot is optimized to handle 50k+ users.
+This bot is optimized to handle **50k+ users**.
 
-✨ Features
-👤 User Features
-🔍 Search files using keywords
-📥 Download files (auto-deleted after 1 minute)
-⭐ Save files to favorites
-📊 View daily usage limit
-🔥 Trending & recent files
-⚡ Inline search support
-🛡 Admin Features
-📤 Upload files (with confirmation)
-🗑  Delete files by ID
-✏️ Update file keywords
-📢 Broadcast messages to all users (rate-limited & safe)
-📈 View download statistics
+---
 
+## ✨ Features
 
-🧰 Tech Stack
-Node.js
-node-telegram-bot-api
-MongoDB Atlas
-Redis (Upstash / Render Redis)
-Express
-Mongoose
+### 👤 User Features
+- 🔍 Search files using keywords  
+- 📥 Download files (auto-deleted after 1 minute)  
+- ⭐ Save files to favorites  
+- 📊 View daily usage limit  
+- 🔥 Trending & recent files  
+- ⚡ Inline search support  
 
+### 🛡 Admin Features
+- 📤 Upload files (with confirmation)  
+- 🗑 Delete files by ID  
+- ✏️ Update file keywords  
+- 📢 Broadcast messages to all users (rate-limited & safe)  
+- 📈 View download statistics  
 
-🚀 Getting Started
-1️⃣ Clone the repository
-git clone https://github.com/your-username/your-repo-name.git
-cd your-repo-name
+---
 
-2️⃣ Install dependencies
-npm install
+## 🧰 Tech Stack
+- Node.js  
+- node-telegram-bot-api  
+- MongoDB Atlas  
+- Redis (Upstash / Render Redis)  
+- Express  
+- Mongoose  
 
-3️⃣ Setup environment variables
-Copy .env.example to .env
-cp .env.example .env
-Fill in all required values in .env
+---
 
-4️⃣ Run the bot locally
-node bot.js
+## 🚀 Getting Started
 
+### 1️⃣ Clone the repository
+- Clone the repository from GitHub  
+- Navigate into the project folder  
 
-🌐 Deployment (Render)
-Create a Web Service on Render
-Add all .env variables in Render Dashboard
-Set start command:
-node bot.js
+Example:
+- git clone https://github.com/AmanNishad20/telegram-bot.git  
+- cd telegram-bot  
 
+---
 
-📌 Notes
-Files sent by the bot are automatically deleted after 1 minute
-Redis is required for scalability (cooldowns, caching, broadcasts)
-MongoDB Atlas free tier works well for moderate traffic
+### 2️⃣ Install dependencies
+- npm install node-telegram-bot-api crypto dotenv ejs express mongodb ioredis p-queue
 
+---
 
-📄 License
-MIT License
+### 3️⃣ Setup environment variables
+- Copy `.env.example` and rename it to `.env`  
+- Fill in all required values inside `.env`  
+
+---
+
+### 4️⃣ Run the bot locally
+- node bot.js  
+
+---
+
+## 🌐 Deployment (Render)
+
+- Create a **Web Service** on Render  
+- Add all environment variables from `.env` into the Render dashboard  
+- Set the start command to:  
+  - node bot.js  
+- Enable HTTPS (Render does this automatically)
+
+---
+
+## 📌 Notes
+- Files sent by the bot are automatically deleted after **1 minute**  
+- Redis is required for scalability (cooldowns, caching, broadcasts)  
+- MongoDB Atlas free tier works well for moderate traffic  
+
+---
+
+## 📄 License
+MIT License  
+
 You are free to use, modify, and distribute this project.
 
+---
 
-🤝 Contribution
-Pull requests are welcome.
-If you find a bug or want a feature, open an issue.
+## 🤝 Contribution
+- Pull requests are welcome  
+- If you find a bug or want a feature, open an issue  
 
+---
 
-❤️ Credits
-Built with ❤️ by Aman
+## ❤️ Credits
+- Built with ❤️ by **Aman**
