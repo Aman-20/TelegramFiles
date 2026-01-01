@@ -1,10 +1,26 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+import Redis from 'ioredis';
+const redis = new Redis(process.env.REDIS_URL);
+redis.on('connect', () => console.log('Redis connected'));
+redis.on('error', err => console.error('Redis error', err));
+
+
 import TelegramBot from 'node-telegram-bot-api';
 import mongoose from 'mongoose';
 import crypto from 'crypto';
 import express from 'express';
+
+//handle error
+process.on('unhandledRejection', err => {
+  console.error('Unhandled rejection:', err);
+});
+
+process.on('uncaughtException', err => {
+  console.error('Uncaught exception:', err);
+});
+
 
 const {
   PORT = 3000,
@@ -65,7 +81,7 @@ const Schema = mongoose.Schema;
 
 // Collection for files
 const FileSchema = new Schema({
-  customId: { type: String, index: true, unique: true }, // F0001...
+  customId: { type: String, unique: true }, // F0001...
   file_id: { type: String, required: true, unique: true }, // telegram file_id
   file_name: String,
   caption: String,
@@ -76,7 +92,7 @@ const FileSchema = new Schema({
   downloads: { type: Number, default: 0 }, // how many times sent
   searches: { type: Number, default: 0 } // aggregate search hits
 });
-FileSchema.index({ file_name: 'text', caption: 'text', keywords: 'text' });
+// FileSchema.index({ file_name: 'text', caption: 'text', keywords: 'text' });
 const File = mongoose.model('File', FileSchema);
 
 // Sequence counter for customId
@@ -117,6 +133,14 @@ const PendingSchema = new Schema({
   created_at: { type: Date, default: Date.now }
 });
 const Pending = mongoose.model('Pending', PendingSchema);
+
+// MongoDB Indexes
+FileSchema.index({ downloads: -1 });
+FileSchema.index({ uploaded_at: -1 });
+
+FavoriteSchema.index({ userId: 1 });
+
+PendingSchema.index({ created_at: 1 }, { expireAfterSeconds: 600 });
 
 
 //Utility helpers
@@ -173,16 +197,21 @@ async function getUserLimitCount(userId) {
 }
 
 // store per-user search results in memory maps
-const userSearchResults = new Map();
-
-function setUserSearchResults(userId, results, ttlMs = 5 * 60 * 1000) {
-  userSearchResults.set(String(userId), { results, expiresAt: Date.now() + ttlMs });
-  // schedule cleanup
-  setTimeout(() => {
-    const v = userSearchResults.get(String(userId));
-    if (v && Date.now() >= v.expiresAt) userSearchResults.delete(String(userId));
-  }, ttlMs + 1000);
+async function setUserSearchResults(userId, results, ttlSeconds = 300) {
+  await redis.set(
+    `search:${userId}`,
+    JSON.stringify(results),
+    'EX',
+    ttlSeconds
+  );
 }
+
+async function getUserSearchResults(userId) {
+  const raw = await redis.get(`search:${userId}`);
+  return raw ? JSON.parse(raw) : null;
+}
+
+
 
 //Telegram bot
 console.log('Bot started');
@@ -278,7 +307,16 @@ bot.onText(/\/stats/, async (msg) => {
 // recent
 bot.onText(/\/recent/, async (msg) => {
   const chatId = msg.chat.id;
-  const recents = await File.find().sort({ uploaded_at: -1 }).limit(10).lean().exec();
+  const cached = await redis.get('recent');
+  let recents;
+
+  if (cached) {
+    recents = JSON.parse(cached);
+  } else {
+    recents = await File.find().sort({ uploaded_at: -1 }).limit(10).lean().exec();
+    await redis.set('recent', JSON.stringify(recents), 'EX', 60);
+  }
+
   if (!recents.length) return bot.sendMessage(chatId, 'No uploads yet.');
 
   const keyboard = recents.map(f => [
@@ -296,7 +334,16 @@ bot.onText(/\/recent/, async (msg) => {
 // trending (by downloads)
 bot.onText(/\/trending/, async (msg) => {
   const chatId = msg.chat.id;
-  const top = await File.find().sort({ downloads: -1 }).limit(10).lean().exec();
+  const cached = await redis.get('trending');
+  let top;
+
+  if (cached) {
+    top = JSON.parse(cached);
+  } else {
+    top = await File.find().sort({ downloads: -1 }).limit(10).lean().exec();
+    await redis.set('trending', JSON.stringify(top), 'EX', 60);
+  }
+
   if (!top.length) return bot.sendMessage(chatId, 'No trending data yet.');
 
   const keyboard = top.map(f => [
@@ -472,7 +519,7 @@ bot.on('message', async (msg) => {
       const pageResults = results.slice(page * RESULTS_PER_PAGE_NUM, (page + 1) * RESULTS_PER_PAGE_NUM);
 
       // store results for callback (map by user)
-      setUserSearchResults(userId, results);
+      await setUserSearchResults(userId, results);
 
       // build keyboard: each button callback uses CUSTOM:customId or INDEX (index within stored results)
       const keyboard = pageResults.map((r, idx) => [{ text: `${r.file_name} (${r.customId})`, callback_data: `GET:${r.customId}` }]);
@@ -506,6 +553,15 @@ bot.on('message', async (msg) => {
     console.error('message handler error', err);
   }
 });
+
+
+async function isCooling(userId, seconds = 3) {
+  const key = `cooldown:${userId}`;
+  const exists = await redis.get(key);
+  if (exists) return true;
+  await redis.set(key, '1', 'EX', seconds);
+  return false;
+}
 
 
 //Callback query handling
@@ -589,7 +645,7 @@ bot.on('callback_query', async (q) => {
         return;
       }
 
-      setUserSearchResults(fromId, results);
+      await setUserSearchResults(fromId, results);
       const total = results.length;
       const pageResults = results.slice(page * RESULTS_PER_PAGE_NUM, (page + 1) * RESULTS_PER_PAGE_NUM);
       const keyboard = pageResults.map(r => [{ text: `${r.file_name} (${r.customId})`, callback_data: `GET:${r.customId}` }]);
@@ -641,6 +697,11 @@ bot.on('callback_query', async (q) => {
 
 
     if (data.startsWith('GET:')) {
+      if (await isCooling(fromId)) {
+        await bot.answerCallbackQuery(q.id, { text: '⏳ Slow down' });
+        return;
+      }
+
       const customId = data.split(':')[1];
       const userId = q.from.id;
 
@@ -679,12 +740,14 @@ bot.on('callback_query', async (q) => {
       }
 
       // quota check
-      const used = await incrementUserLimit(fromId);
-      if (used > DAILY_LIMIT_NUM) {
-        await bot.answerCallbackQuery(q.id, { text: `Daily limit ${DAILY_LIMIT_NUM} reached.` });
-        await bot.sendMessage(q.message.chat.id, `⚠️ You reached the daily limit (${DAILY_LIMIT_NUM}).`);
+      const used = await getUserLimitCount(fromId);
+      if (used >= DAILY_LIMIT_NUM) {
+        await bot.answerCallbackQuery(q.id, { text: 'Daily limit reached' });
         return;
       }
+
+      await incrementUserLimit(fromId);
+
 
       // increment download counter
       await File.updateOne({ _id: fileDoc._id }, { $inc: { downloads: 1 } }).exec();
@@ -796,7 +859,11 @@ bot.on('inline_query', async (iq) => {
     }));
 
 
-    await bot.answerInlineQuery(iq.id, inline, { cache_time: 0 });
+    await bot.answerInlineQuery(iq.id, inline, {
+      cache_time: 30,
+      is_personal: true
+    });
+
   } catch (err) {
     console.error('inline_query error', err);
   }
@@ -834,13 +901,28 @@ bot.onText(/\/broadcast (.+)/, async (msg, match) => {
   // ask confirm
   const pendingKey = crypto.randomBytes(6).toString('hex');
   // store in memory simple map (one-off) or you can implement a DB pending. For brevity use map:
-  broadcastPending.set(pendingKey, { text, admin: userId });
+
+  await setBroadcast(pendingKey, { text, admin: userId });
+
   await bot.sendMessage(chatId, `Broadcast preview:\n\n${text}\n\nConfirm sending?`, {
     reply_markup: { inline_keyboard: [[{ text: '✅ Send', callback_data: `BC_SEND:${pendingKey}` }, { text: '❌ Cancel', callback_data: `BC_CANCEL:${pendingKey}` }]] }
   });
 });
 
-const broadcastPending = new Map();
+// broadcast
+async function setBroadcast(key, value) {
+  await redis.set(`broadcast:${key}`, JSON.stringify(value), 'EX', 300);
+}
+
+async function getBroadcast(key) {
+  const raw = await redis.get(`broadcast:${key}`);
+  return raw ? JSON.parse(raw) : null;
+}
+
+async function deleteBroadcast(key) {
+  await redis.del(`broadcast:${key}`);
+}
+
 
 bot.on('callback_query', async (q) => {
   // existing handler above processes many items; we handle broadcast callbacks here early if present
@@ -849,25 +931,33 @@ bot.on('callback_query', async (q) => {
     if (data.startsWith('BC_SEND:') || data.startsWith('BC_CANCEL:')) {
       const parts = data.split(':');
       const key = parts[1];
-      const obj = broadcastPending.get(key);
+      const obj = await getBroadcast(key);
       if (!obj) {
         await bot.answerCallbackQuery(q.id, { text: 'Expired.' });
         return;
       }
       if (data.startsWith('BC_CANCEL:')) {
-        broadcastPending.delete(key);
+        await deleteBroadcast(key);
         await bot.editMessageText('Broadcast cancelled.', { chat_id: q.message.chat.id, message_id: q.message.message_id }).catch(() => { });
         await bot.answerCallbackQuery(q.id, { text: 'Cancelled.' });
         return;
       }
-      // send broadcast (be careful with large user base - implement batching and delay)
+      // send broadcast
       const text = obj.text;
-      // naive: iterate known users from Limit collection (all users who used bot). For production, use users collection.
+
       const users = await Limit.distinct('userId').exec();
+
+      const DELAY_MS = 35; // safe for Telegram
       for (const u of users) {
-        try { await bot.sendMessage(u, `📣 Broadcast:\n\n${text}`); } catch (e) { console.warn('send to', u, 'failed'); }
+        try {
+          await bot.sendMessage(u, `📣 Broadcast:\n\n${text}`);
+          await new Promise(res => setTimeout(res, DELAY_MS));
+        } catch (e) {
+          console.warn('send to', u, 'failed');
+        }
       }
-      broadcastPending.delete(key);
+
+      await deleteBroadcast(key);
       await bot.editMessageText('Broadcast sent.', { chat_id: q.message.chat.id, message_id: q.message.message_id }).catch(() => { });
       await bot.answerCallbackQuery(q.id, { text: 'Broadcast sent.' });
       return;
